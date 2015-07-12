@@ -1,10 +1,12 @@
 import requests
 import config
 import json
-import twittera
+import twitter
 import pyaudio
 import wave
 from requests.auth import HTTPBasicAuth
+
+AUDIO_FILENAME = 'rec.wav'
 
 def tweet(message):
     api = twitter.Api(
@@ -15,9 +17,9 @@ def tweet(message):
 
     api.PostUpdate(message)
 
-def speech_to_text(audio_):
+def speech_to_text():
     url = "https://stream.watsonplatform.net/speech-to-text/api/v1/recognize"
-    files = {'file': open(audio_filename, 'rb')}
+    files = {'file': open(AUDIO_FILENAME, 'rb')}
     auth = HTTPBasicAuth(config.BLUEMIX_STT_USER, config.BLUEMIX_STT_PASS)
     data = {
         'jsonDescription':json.dumps({
@@ -30,34 +32,41 @@ def speech_to_text(audio_):
         })
     }
     resp = requests.post(url, data=data, files=files, auth=auth)
-    return resp.json().results.transcript
+    jdata = resp.json()['results']
+    if jdata:
+        return jdata[0]['alternatives'][0]['transcript']
+    else:
+        return ''
 
 CHUNK = 1024
 FORMAT = pyaudio.paInt16
 CHANNELS = 2
 RATE = 44100
-RECORD_SECONDS = 5
 
-def create_audio(audio_filename):
+def create_audio_ctx():
     p = pyaudio.PyAudio()
-
+    wf = wave.open(AUDIO_FILENAME, 'wb')
     stream = p.open(format=FORMAT,
                     channels=CHANNELS,
                     rate=RATE,
                     input=True,
                     frames_per_buffer=CHUNK)
-
     frames = []
+    return [p, wf, stream, frames]
 
-    for i in range(0, int(RATE / CHUNK * RECORD_SECONDS)):
-        data = stream.read(CHUNK)
-        frames.append(data)
+def process_audio_frame(ctx):
+    p, wf, stream, frames = ctx
+
+    data = stream.read(CHUNK)
+    frames.append(data)
+
+def close_audio_ctx(ctx):
+    p, wf, stream, frames = ctx
 
     stream.stop_stream()
     stream.close()
     p.terminate()
 
-    wf = wave.open(audio_data, 'wb')
     wf.setnchannels(CHANNELS)
     wf.setsampwidth(p.get_sample_size(FORMAT))
     wf.setframerate(RATE)
